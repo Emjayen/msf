@@ -138,6 +138,34 @@ void* MsfOpenFile(u32 idx, u32* FileSz)
 
 
 /*
+ * MsfFlush
+ *
+ */
+bool MsfFlush(HANDLE hOutFile /* [optional] */)
+{
+	hOutFile = hOutFile ? hOutFile : hFile;
+
+	// Shoot down any current mappings.
+	if(!MapUserPhysicalPages(NULL, MfsSz, BlockPfn))
+		return false;
+
+	// Map the whole thing into memory again.
+	void* VA;
+
+	if(!(VA = VirtualAlloc(NULL, MfsSz * PAGE_SIZE, MEM_RESERVE | MEM_PHYSICAL, PAGE_READWRITE)))
+		return false;
+
+	if(!MapUserPhysicalPages(VA, MfsSz, BlockPfn))
+		return false;
+
+	DWORD Result;
+
+	return WriteFile(hOutFile, VA, MfsSz * PAGE_SIZE, &Result, NULL) && Result == MfsSz * PAGE_SIZE;
+}
+
+
+
+/*
  * MsfOpen
  *
  */

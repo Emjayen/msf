@@ -2,8 +2,7 @@
  * msf.cpp
  *
  */
-#include "pce\pce.h"
-#include <windows.h>
+#include "msf.h"
 #include <stdio.h>
 
 
@@ -52,34 +51,12 @@ struct msf_mft
 #define LOG(fmt, ...) printf("\r\n" fmt, __VA_ARGS__)
 
 
-bool EnablePrivilege(const TCHAR* lpPrivilegeName)
-{
-	HANDLE hToken;
-	TOKEN_PRIVILEGES tp;
-
-
-	if(!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY | TOKEN_ADJUST_PRIVILEGES, &hToken))
-		return false;
-
-	tp.PrivilegeCount = 1;
-	tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
-
-	if(!LookupPrivilegeValue(NULL, lpPrivilegeName, &tp.Privileges[0].Luid))
-	{
-		CloseHandle(hToken);
-		return false;
-	}
-
-	return AdjustTokenPrivileges(hToken, FALSE, &tp, 0, (PTOKEN_PRIVILEGES) NULL, 0) && GetLastError() == ERROR_SUCCESS;
-}
-
 
 // MSF state
 static HANDLE hFile;
 static ULONG_PTR* BlockPfn; // Translate LBA -> PFN
 static LARGE_INTEGER FileSz; // MFS size, in bytes.
 static ULONG_PTR MfsSz; // MFS size, in blocks/pages.
-static msf_hdr* MsfHdr;
 static msf_mft* Mft;
 
 struct
@@ -105,10 +82,7 @@ static void* MsfMapLba(lba* LBA, u32 count)
 		pfn[i] = BlockPfn[LBA[i]];
 
 	if(!MapUserPhysicalPages(VA, count, pfn))
-	{
-		DWORD err = GetLastError();
 		return NULL;
-	}
 
 	return VA;
 }
@@ -146,7 +120,13 @@ bool MsfFlush(HANDLE hOutFile /* [optional] */)
 	hOutFile = hOutFile ? hOutFile : hFile;
 
 	// Shoot down any current mappings.
-	if(!MapUserPhysicalPages(NULL, MfsSz, BlockPfn))
+	for(u32 i = 0; i < Mft->file_num; i++)
+	{
+		if(MsfFile[i].p && !VirtualFree(MsfFile[i].p, 0, MEM_RELEASE))
+			return false;
+	}
+
+	if(!VirtualFree(Mft, 0, MEM_RELEASE))
 		return false;
 
 	// Map the whole thing into memory again.
@@ -160,7 +140,7 @@ bool MsfFlush(HANDLE hOutFile /* [optional] */)
 
 	DWORD Result;
 
-	return WriteFile(hOutFile, VA, MfsSz * PAGE_SIZE, &Result, NULL) && Result == MfsSz * PAGE_SIZE;
+	return SetFilePointerEx(hFile, { 0 }, NULL, FILE_BEGIN) && WriteFile(hOutFile, VA, MfsSz * PAGE_SIZE, &Result, NULL) && Result == MfsSz * PAGE_SIZE;
 }
 
 
@@ -201,7 +181,7 @@ bool MsfOpen(const TCHAR* FileName)
 	VirtualFree(VA, 0, MEM_RELEASE);
 
 	// Parse the MSF header.
-	MsfHdr = (msf_hdr*) MsfMapLba(0);
+	msf_hdr* MsfHdr = (msf_hdr*) MsfMapLba(0);
 
 	// Some basic sanity checks first.
 	if(memcmp(MsfHdr->magic, MSF_HDR_MAGIC, sizeof(MsfHdr->magic)) != 0)
@@ -227,6 +207,10 @@ bool MsfOpen(const TCHAR* FileName)
 	// Now finally map the MFT itself.
 	Mft = (msf_mft*) MsfMapLba(rl, BLOCK_ROUND_UP(MsfHdr->mft_sz));
 
+	// Release the MFT runlist and MSF header mapping as it's no longer needed.
+	if(!VirtualFree(rl, 0, MEM_RELEASE) || !VirtualFree(MsfHdr, 0, MEM_RELEASE))
+		return false;
+
 	// Parse the MFT, mapping each file into contiguous address-space.
 	rl = (lba*) &Mft->file_sz[Mft->file_num];
 
@@ -249,26 +233,3 @@ bool MsfOpen(const TCHAR* FileName)
 }
 
 
-#pragma pack(1)
-
-struct pdb_info_hdr
-{
-	u32 ver;
-	u32 sig;
-	u32 age;
-};
-
-#pragma pack()
-
-
-void main()
-{
-	if(!EnablePrivilege(SE_LOCK_MEMORY_NAME))
-		return;
-
-	if(!MsfOpen(L"C:\\Age.pdb"))
-		LOG("Failed to open input file");
-
-	// Open the 'PDB Info Stream'
-	pdb_info_hdr* pdb = (pdb_info_hdr*) MsfOpenFile(1, NULL);
-}

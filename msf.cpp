@@ -2,15 +2,17 @@
  * msf.cpp
  *
  */
-#include "msf.h"
+#include "msflib.h"
+#include <windows.h>
+#include <malloc.h>
 #include <stdio.h>
+
 
 
 
 
 // Constants
 #define PAGE_SIZE  0x1000
-#define MAX_MSF_FILES  512 /* Maximum number of files within an MSF we support. */
 
 // MFS constants
 #define MSF_HDR_MAGIC  "Microsoft C/C++ MSF 7.00\r\n\x1A\x44\x53\x00\x00\x00"
@@ -21,6 +23,8 @@ typedef u32 lba;
 // Round up byte to block.
 #define BLOCK_ROUND_UP(x) (ROUND_UP(x, PAGE_SIZE) / PAGE_SIZE)
 
+// Round integer up to multiple.
+#define ROUND_UP(n, m) ((((n) + (m) - 1) / m) * m)
 
 #pragma pack(1)
 
@@ -59,11 +63,11 @@ static LARGE_INTEGER FileSz; // MFS size, in bytes.
 static ULONG_PTR MfsSz; // MFS size, in blocks/pages.
 static msf_mft* Mft;
 
-struct
+struct _MSF_FILE
 {
 	void* p; /* Pointer to file data. */
 	u32 size; /* File size, in bytes. */
-} static MsfFile[MAX_MSF_FILES];
+} *MsfFile;
 
 
 /*
@@ -149,7 +153,7 @@ bool MsfFlush(HANDLE hOutFile /* [optional] */)
  * MsfOpen
  *
  */
-bool MsfOpen(const TCHAR* FileName)
+bool MsfOpen(const char* FileName)
 {
 	if((hFile = CreateFile(FileName, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, 0, NULL)) == INVALID_HANDLE_VALUE || !GetFileSizeEx(hFile, &FileSz))
 		return false;
@@ -212,6 +216,9 @@ bool MsfOpen(const TCHAR* FileName)
 		return false;
 
 	// Parse the MFT, mapping each file into contiguous address-space.
+	if(!(MsfFile = (_MSF_FILE*) VirtualAlloc(NULL, Mft->file_num * sizeof(_MSF_FILE), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE)))
+		return false;
+
 	rl = (lba*) &Mft->file_sz[Mft->file_num];
 
 	for(u32 i = 0; i < Mft->file_num; i++)

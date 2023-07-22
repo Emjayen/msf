@@ -10,6 +10,6 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="msf.h" />
+    <ClInclude Include="msflib.h" />
   </ItemGroup>
 </Project>

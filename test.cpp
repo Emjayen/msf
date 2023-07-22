@@ -1,5 +1,5 @@
-#include "msf.h"
-
+#include "msflib.h"
+#include <Windows.h>
 
 #pragma pack(1)
 
@@ -41,10 +41,11 @@ void main()
 	if(!EnablePrivilege(SE_LOCK_MEMORY_NAME))
 		return;
 
-	auto result = MsfOpen(L"C:\\Age.pdb");
+	if(!MsfOpen("C:\\rogan2.pdb"))
+		DebugBreak();
 
 	// Open the 'PDB Info Stream'
 	pdb_info_hdr* pdb = (pdb_info_hdr*) MsfOpenFile(1, NULL);
 
-	auto r = MsfFlush(NULL);
+	//auto r = MsfFlush(NULL);
 }

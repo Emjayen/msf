@@ -3,12 +3,11 @@
  *
  */
 #pragma once
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#include "pce\pce.h"
+#include <stdint.h>
 
 
-
+typedef uint32_t u32;
+typedef unsigned char byte;
 
 
 /*
@@ -25,7 +24,7 @@
  *    Only one MSF volume may be operated upon concurrently.
  * 
  */
-bool MsfOpen(const TCHAR* FileName);
+bool MsfOpen(const char* FileName);
 
 
 
@@ -56,6 +55,9 @@ void* MsfOpenFile(u32 idx, u32* FileSz);
  *
  * Return:
  *    Returns non-zero on success; zero on failure.
+ * 
+ * Remarks:
+ *    Flushing tears down all current state. All views acquired via `MSfOpenFile` are invalidated.
  *
  */
-bool MsfFlush(HANDLE hOutFile);
+bool MsfFlush(void* hOutFile);
